@@ -54,7 +54,15 @@ cp .env.example .env
 go run cmd/api/main.go migrate
 ```
 
-4. Start the server:
+4. (Optional) Seed the database with sample data:
+
+```bash
+go run cmd/api/main.go seed
+```
+
+This will create 50 sample orders with random data for testing purposes.
+
+5. Start the server:
 
 ```bash
 go run cmd/api/main.go
@@ -65,8 +73,15 @@ go run cmd/api/main.go
 ### Orders
 
 - `GET /api/v1/orders` - List orders with pagination and filtering
-  - Query params: `page`, `limit`, `status`, `customer_id`, `from_date`, `to_date`
+  - Query params: `page`, `limit`, `status`, `customer_id`, `min_amount`, `max_amount`, `from_date`, `to_date`
 - `POST /api/v1/orders` - Create new order
+
+## CLI Commands
+
+- `go run cmd/api/main.go` - Start the API server
+- `go run cmd/api/main.go migrate` - Run database migrations
+- `go run cmd/api/main.go migrate-down` - Rollback database migrations
+- `go run cmd/api/main.go seed` - Seed database with 50 sample orders
 
 ## Example Requests
 
