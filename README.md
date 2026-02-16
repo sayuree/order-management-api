@@ -294,16 +294,14 @@ Content-Type: application/json
 
 **Query Parameters**:
 
-| Parameter     | Type    | Description                            | Example                 |
-| ------------- | ------- | -------------------------------------- | ----------------------- |
-| `page`        | integer | Page number (default: 1)               | `?page=2`               |
-| `limit`       | integer | Items per page (default: 10, max: 100) | `?limit=20`             |
-| `status`      | string  | Filter by order status                 | `?status=pending`       |
-| `customer_id` | string  | Filter by customer ID                  | `?customer_id=cust-123` |
-| `min_amount`  | float   | Minimum order amount                   | `?min_amount=50`        |
-| `max_amount`  | float   | Maximum order amount                   | `?max_amount=500`       |
-| `from_date`   | date    | Start date (YYYY-MM-DD)                | `?from_date=2026-01-01` |
-| `to_date`     | date    | End date (YYYY-MM-DD)                  | `?to_date=2026-12-31`   |
+| Parameter     | Type    | Description                            | Example                            |
+| ------------- | ------- | -------------------------------------- | ---------------------------------- |
+| `page`        | integer | Page number (default: 1)               | `?page=2`                          |
+| `limit`       | integer | Items per page (default: 10, max: 100) | `?limit=20`                        |
+| `status`      | string  | Filter by order status                 | `?status=pending`                  |
+| `customer_id` | string  | Filter by customer ID                  | `?customer_id=cust-123`            |
+| `amount`      | float   | Amount range (min,max)                 | `?amount=50,500`                   |
+| `dateRange`   | date    | Date range (from,to, YYYY-MM-DD)       | `?dateRange=2026-01-01,2026-12-31` |
 
 **Response** (200 OK):
 
@@ -330,6 +328,7 @@ Content-Type: application/json
   "total": 150,
   "page": 1,
   "limit": 10,
+  "offset": 0,
   "total_pages": 15
 }
 ```
@@ -337,16 +336,11 @@ Content-Type: application/json
 **Filter Combinations**:
 
 - All filters can be combined
-- Invalid parameter values are ignored (query continues with valid filters)
+- Invalid parameter values return `400 Bad Request`
 - Date format must be `YYYY-MM-DD`
 - Amount filters accept decimal values
-
-**Filter Combinations**:
-
-- All filters can be combined
-- Invalid parameter values are ignored (query continues with valid filters)
-- Date format must be `YYYY-MM-DD`
-- Amount filters accept decimal values
+- Amount range must be `min <= max`
+- Date range must be `from <= to`
 
 ## Usage Examples
 
@@ -382,6 +376,19 @@ curl http://localhost:8080/api/v1/orders
 curl "http://localhost:8080/api/v1/orders?page=2&limit=20"
 ```
 
+**Response** (200 OK):
+
+```json
+{
+  "orders": [],
+  "total": 150,
+  "page": 2,
+  "limit": 20,
+  "offset": 20,
+  "total_pages": 8
+}
+```
+
 ### Example 4: Filter by Status
 
 ```bash
@@ -402,27 +409,49 @@ curl "http://localhost:8080/api/v1/orders?customer_id=cust-123"
 
 ```bash
 # Orders between $50 and $200
-curl "http://localhost:8080/api/v1/orders?min_amount=50&max_amount=200"
+curl "http://localhost:8080/api/v1/orders?amount=50,200"
 
-# Orders over $1000
-curl "http://localhost:8080/api/v1/orders?min_amount=1000"
+# Orders exactly $1000
+curl "http://localhost:8080/api/v1/orders?amount=1000"
 ```
 
 ### Example 7: Filter by Date Range
 
 ```bash
 # Orders in January 2026
-curl "http://localhost:8080/api/v1/orders?from_date=2026-01-01&to_date=2026-01-31"
+curl "http://localhost:8080/api/v1/orders?dateRange=2026-01-01,2026-01-31"
 
 # Orders from last 7 days
-curl "http://localhost:8080/api/v1/orders?from_date=2026-02-02&to_date=2026-02-09"
+curl "http://localhost:8080/api/v1/orders?dateRange=2026-02-02,2026-02-09"
 ```
 
 ### Example 8: Combined Filters
 
 ```bash
 # Pending orders for customer cust-123 between $100-$500 in February 2026
-curl "http://localhost:8080/api/v1/orders?status=pending&customer_id=cust-123&min_amount=100&max_amount=500&from_date=2026-02-01&to_date=2026-02-28&page=1&limit=10"
+curl "http://localhost:8080/api/v1/orders?status=pending&customer_id=cust-123&amount=100,500&dateRange=2026-02-01,2026-02-28&page=1&limit=10"
+```
+
+**Response** (200 OK):
+
+```json
+{
+  "orders": [
+    {
+      "id": 10,
+      "customer_id": "cust-123",
+      "total_amount": 250.0,
+      "status": "pending",
+      "created_at": "2026-02-10T10:30:00Z",
+      "updated_at": "2026-02-10T10:30:00Z"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 10,
+  "offset": 0,
+  "total_pages": 1
+}
 ```
 
 ### Example 9: Using with HTTPie (Alternative)

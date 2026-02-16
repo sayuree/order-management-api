@@ -31,6 +31,9 @@ func (s *OrderService) CreateOrder(ctx context.Context, order *models.Order) err
 
 
 func (s *OrderService) ListOrders(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
+	   if pagination == nil {
+	       pagination = &models.Pagination{Page: 1, Limit: 10, Offset: 0}
+	   }
        // Validate pagination
        if pagination.Page < 1 {
 	       pagination.Page = 1
@@ -38,6 +41,9 @@ func (s *OrderService) ListOrders(ctx context.Context, filter *models.OrderFilte
        if pagination.Limit < 1 {
 	       pagination.Limit = 10
        }
+	   if pagination.Offset < 0 || pagination.Offset != (pagination.Page-1)*pagination.Limit {
+	       pagination.Offset = (pagination.Page - 1) * pagination.Limit
+	   }
        return s.repo.List(ctx, filter, pagination)
 }
 

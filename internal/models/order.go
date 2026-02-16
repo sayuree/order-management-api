@@ -52,6 +52,7 @@ type OrderFilter struct {
 type Pagination struct {
 	Page  int
 	Limit int
+	Offset int
 }
 
 type PaginatedOrders struct {
@@ -59,5 +60,6 @@ type PaginatedOrders struct {
 	Total      int64   `json:"total"`
 	Page       int     `json:"page"`
 	Limit      int     `json:"limit"`
+	Offset     int     `json:"offset"`
 	TotalPages int     `json:"total_pages"`
 }

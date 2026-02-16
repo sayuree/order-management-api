@@ -1,5 +1,3 @@
-
-
 package repository
 
 import (
@@ -59,6 +57,16 @@ func (r *PostgresOrderRepository) Create(ctx context.Context, order *models.Orde
 	}
 
 func (r *PostgresOrderRepository) List(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
+	if pagination == nil {
+		pagination = &models.Pagination{Page: 1, Limit: 10, Offset: 0}
+	}
+	if pagination.Page < 1 {
+		pagination.Page = 1
+	}
+	if pagination.Limit < 1 {
+		pagination.Limit = 10
+	}
+
 	var conditions []string
 	var args []interface{}
 	argIndex := 1
@@ -111,7 +119,11 @@ func (r *PostgresOrderRepository) List(ctx context.Context, filter *models.Order
 	}
 
 	// Get paginated results
-	offset := (pagination.Page - 1) * pagination.Limit
+	expectedOffset := (pagination.Page - 1) * pagination.Limit
+	offset := pagination.Offset
+	if offset < 0 || offset != expectedOffset {
+		offset = expectedOffset
+	}
 	query := fmt.Sprintf(`
 		SELECT id, customer_id, total_amount, status, created_at, updated_at
 		FROM orders
@@ -143,6 +155,9 @@ func (r *PostgresOrderRepository) List(ctx context.Context, filter *models.Order
 		}
 		orders = append(orders, order)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate orders: %w", err)
+	}
 
 	totalPages := int(total) / pagination.Limit
 	if int(total)%pagination.Limit > 0 {
@@ -154,6 +169,7 @@ func (r *PostgresOrderRepository) List(ctx context.Context, filter *models.Order
 		Total:      total,
 		Page:       pagination.Page,
 		Limit:      pagination.Limit,
+		Offset:     offset,
 		TotalPages: totalPages,
 	}, nil
 }
