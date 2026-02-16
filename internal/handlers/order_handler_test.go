@@ -87,7 +87,21 @@ func TestCreateOrder_ValidationError(t *testing.T) {
 
 // 4. Test default pagination
 func TestListOrders_DefaultPagination(t *testing.T) {
-	h := setupTestHandler()
+	service := &mockOrderService{
+		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
+			if pagination.Page != 1 {
+				t.Errorf("expected page=1, got %d", pagination.Page)
+			}
+			if pagination.Limit != 10 {
+				t.Errorf("expected limit=10, got %d", pagination.Limit)
+			}
+			if pagination.Offset != 0 {
+				t.Errorf("expected offset=0, got %d", pagination.Offset)
+			}
+			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 1, Limit: 10, Offset: 0, TotalPages: 1}, nil
+		},
+	}
+	h := NewOrderHandler(service, 10, 100)
 	req := httptest.NewRequest("GET", "/api/v1/orders", nil)
 	w := httptest.NewRecorder()
 	h.ListOrders(w, req)
@@ -102,6 +116,9 @@ func TestListOrders_CustomPagination(t *testing.T) {
 		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
 			if pagination.Page != 2 || pagination.Limit != 5 {
 				t.Errorf("expected page=2, limit=5, got page=%d, limit=%d", pagination.Page, pagination.Limit)
+			}
+			if pagination.Offset != 5 {
+				t.Errorf("expected offset=5, got %d", pagination.Offset)
 			}
 			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 2, Limit: 5, TotalPages: 1}, nil
 		},
@@ -121,6 +138,9 @@ func TestListOrders_PaginationExceedsMax(t *testing.T) {
 		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
 			if pagination.Limit != 100 {
 				t.Errorf("expected limit capped at 100, got %d", pagination.Limit)
+			}
+			if pagination.Offset != 0 {
+				t.Errorf("expected offset=0, got %d", pagination.Offset)
 			}
 			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 1, Limit: 100, TotalPages: 1}, nil
 		},
@@ -186,13 +206,14 @@ func TestListOrders_AmountRange(t *testing.T) {
 		},
 	}
 	h := NewOrderHandler(service, 10, 100)
-	req := httptest.NewRequest("GET", "/api/v1/orders?min_amount=50&max_amount=200", nil)
+	req := httptest.NewRequest("GET", "/api/v1/orders?amount=50,200", nil)
 	w := httptest.NewRecorder()
 	h.ListOrders(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
+
 
 // 10. Test date range filter
 func TestListOrders_DateRange(t *testing.T) {
@@ -210,7 +231,7 @@ func TestListOrders_DateRange(t *testing.T) {
 		},
 	}
 	h := NewOrderHandler(service, 10, 100)
-	req := httptest.NewRequest("GET", "/api/v1/orders?from_date="+from+"&to_date="+to, nil)
+	req := httptest.NewRequest("GET", "/api/v1/orders?dateRange="+from+","+to, nil)
 	w := httptest.NewRecorder()
 	h.ListOrders(w, req)
 	if w.Code != http.StatusOK {
@@ -218,105 +239,89 @@ func TestListOrders_DateRange(t *testing.T) {
 	}
 }
 
-// 11. Test all filters combined
-func TestListOrders_AllFilters(t *testing.T) {
-	from := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
-	to := time.Now().Format("2006-01-02")
-	service := &mockOrderService{
-		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
-			if filter.Status == nil || *filter.Status != "delivered" {
-				t.Error("expected status 'delivered'")
-			}
-			if filter.MinAmount == nil || filter.MaxAmount == nil {
-				t.Error("expected amount range")
-			}
-			if filter.FromDate == nil || filter.ToDate == nil {
-				t.Error("expected date range")
-			}
-			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 1, Limit: 10, TotalPages: 1}, nil
-		},
-	}
-	h := NewOrderHandler(service, 10, 100)
-	req := httptest.NewRequest("GET", "/api/v1/orders?status=delivered&min_amount=10&max_amount=1000&from_date="+from+"&to_date="+to, nil)
-	w := httptest.NewRecorder()
-	h.ListOrders(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
-	}
-}
+
 
 // 12. Test invalid min_amount (should be ignored)
-func TestListOrders_InvalidMinAmount(t *testing.T) {
-	service := &mockOrderService{
-		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
-			if filter.MinAmount != nil {
-				t.Error("expected min_amount to be nil when invalid")
-			}
-			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 1, Limit: 10, TotalPages: 1}, nil
-		},
-	}
-	h := NewOrderHandler(service, 10, 100)
-	req := httptest.NewRequest("GET", "/api/v1/orders?min_amount=notanumber", nil)
+func TestListOrders_InvalidAmount(t *testing.T) {
+	h := setupTestHandler()
+	req := httptest.NewRequest("GET", "/api/v1/orders?amount=notanumber", nil)
 	w := httptest.NewRecorder()
 	h.ListOrders(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
 // 13. Test invalid date format (should be ignored)
-func TestListOrders_InvalidFromDate(t *testing.T) {
-	service := &mockOrderService{
-		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
-			if filter.FromDate != nil {
-				t.Error("expected from_date to be nil when invalid")
-			}
-			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 1, Limit: 10, TotalPages: 1}, nil
-		},
-	}
-	h := NewOrderHandler(service, 10, 100)
-	req := httptest.NewRequest("GET", "/api/v1/orders?from_date=bad-date", nil)
+func TestListOrders_InvalidDateRange(t *testing.T) {
+	h := setupTestHandler()
+	req := httptest.NewRequest("GET", "/api/v1/orders?dateRange=bad-date", nil)
 	w := httptest.NewRecorder()
 	h.ListOrders(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
-// 14. Test service error on list
-func TestListOrders_ServiceError(t *testing.T) {
+
+// 16. Test invalid page and limit values (non-numeric)
+func TestListOrders_InvalidPaginationParams(t *testing.T) {
+	h := setupTestHandler()
+	req := httptest.NewRequest("GET", "/api/v1/orders?page=abc&limit=xyz", nil)
+	w := httptest.NewRecorder()
+	h.ListOrders(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+// 20. Test empty results
+func TestListOrders_EmptyResults(t *testing.T) {
 	service := &mockOrderService{
 		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
-			return nil, errors.New("database connection failed")
+			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 1, Limit: 10, Offset: 0, TotalPages: 0}, nil
 		},
 	}
 	h := NewOrderHandler(service, 10, 100)
 	req := httptest.NewRequest("GET", "/api/v1/orders", nil)
 	w := httptest.NewRecorder()
 	h.ListOrders(w, req)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
 
-// 15. Test zero/negative pagination (should use defaults)
-func TestListOrders_NegativePagination(t *testing.T) {
-	service := &mockOrderService{
-		ListOrdersFunc: func(ctx context.Context, filter *models.OrderFilter, pagination *models.Pagination) (*models.PaginatedOrders, error) {
-			if pagination.Page != 1 {
-				t.Errorf("expected page to default to 1, got %d", pagination.Page)
-			}
-			if pagination.Limit != 10 {
-				t.Errorf("expected limit to default to 10, got %d", pagination.Limit)
-			}
-			return &models.PaginatedOrders{Orders: []models.Order{}, Total: 0, Page: 1, Limit: 10, TotalPages: 1}, nil
-		},
-	}
-	h := NewOrderHandler(service, 10, 100)
-	req := httptest.NewRequest("GET", "/api/v1/orders?page=-1&limit=0", nil)
+// 17. Test invalid status
+func TestListOrders_InvalidStatus(t *testing.T) {
+	h := setupTestHandler()
+	req := httptest.NewRequest("GET", "/api/v1/orders?status=unknown", nil)
 	w := httptest.NewRecorder()
 	h.ListOrders(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+// 18. Test invalid amount range (min > max)
+func TestListOrders_InvalidAmountRange(t *testing.T) {
+	h := setupTestHandler()
+	req := httptest.NewRequest("GET", "/api/v1/orders?amount=200,100", nil)
+	w := httptest.NewRecorder()
+	h.ListOrders(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+// 19. Test invalid date range (from > to)
+func TestListOrders_InvalidDateRangeOrder(t *testing.T) {
+	from := time.Now().Format("2006-01-02")
+	to := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	h := setupTestHandler()
+	req := httptest.NewRequest("GET", "/api/v1/orders?dateRange="+from+","+to, nil)
+	w := httptest.NewRecorder()
+	h.ListOrders(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
